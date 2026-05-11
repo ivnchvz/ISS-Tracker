@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { io } from "socket.io-client";
 import { useEffect, useState } from "react";
 import { StarsBackground } from "../components/ui/stars-background"; // Already added
 
@@ -23,13 +22,6 @@ const Globe = dynamic<GlobeProps>(
   { ssr: false }
 );
 
-// Dynamically determine the backend URL based on the current host
-const backendUrl = `http://${typeof window !== "undefined" ? window.location.hostname : "localhost"}:5000`;
-const socket = io(backendUrl, {
-  transports: ["websocket", "polling"],
-  path: "/socket.io",
-});
-
 interface IssUpdateData {
   latitude: number;
   longitude: number;
@@ -48,13 +40,11 @@ export default function Home() {
     countryCode: "N/A",
   });
 
-  useEffect(() => {
-    socket.on("connect", () => {
-      console.log(`Connected to backend at ${backendUrl}`);
-    });
-
-    socket.on("iss_update", (data: IssUpdateData) => {
-      console.log("Received ISS update:", data);
+  const fetchIssData = async () => {
+    try {
+      const response = await fetch("/api/iss");
+      const data: IssUpdateData = await response.json();
+      
       if (data && !data.error) {
         setIssPosition({
           latitude: Number(data.latitude),
@@ -62,24 +52,21 @@ export default function Home() {
           countryCode: data.country_code || "N/A",
         });
       } else if (data.error) {
-        console.error("Backend error:", data.error);
+        console.error("API error:", data.error);
       }
-    });
+    } catch (err) {
+      console.error("Fetch error:", err);
+    }
+  };
 
-    socket.on("connect_error", (err) => {
-      console.error("Connection error:", err.message);
-    });
+  useEffect(() => {
+    // Initial fetch
+    fetchIssData();
 
-    socket.on("disconnect", () => {
-      console.log("Disconnected from backend");
-    });
+    // Set up polling every 2 seconds
+    const interval = setInterval(fetchIssData, 2000);
 
-    return () => {
-      socket.off("connect");
-      socket.off("iss_update");
-      socket.off("connect_error");
-      socket.off("disconnect");
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const globeConfig = {
